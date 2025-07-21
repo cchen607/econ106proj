@@ -1,0 +1,418 @@
+---
+title: "Final Project R Script"
+author: "Christopher Chen"
+date: "2023-11-29"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Here is the code I used for cleaning the data and creating all my visualizations.
+
+## Read in data and load packages.
+```{r, message=FALSE}
+library(readr)
+library(tidyverse)
+library(dplyr)
+library(SnowballC)
+library(tidytext)
+library(textdata)
+library(wordcloud)
+library(viridis)   
+library(ggpubr)
+library(RColorBrewer)
+rate_my_prof <- read.csv("RateMyProfessor_Sample data.csv")
+```
+
+## Overall data clean, removing a bunch of extra variables.
+```{r}
+rmp_clean <-rate_my_prof %>% 
+  select(professor_name, school_name, department_name, state_name, year_since_first_review,
+         star_rating, diff_index, post_date, student_star, student_difficult, attence,
+         for_credits, grades, gender, comments)
+```
+
+## Categorical Variables
+
+### DEPARTMENT/COLLEGE:
+```{r}
+rmp_clean$department_name[rmp_clean$department_name == "Women\\'s Studies department"] <- "Women's Studies department"
+rmp_clean <- rmp_clean %>% 
+  mutate(department_name=str_remove(department_name," department")) %>% 
+  mutate(department_name = factor(department_name)) %>% 
+  mutate(department_fewer = fct_collapse(department_name,
+                                         "STEM" = c("Agriculture", "Architecture", "Astronomy", "Aviation",
+                                                    "Biochemistry","Biology","Biochemistry", 
+                                                    "Chemistry & Biochemistry","Chemistry", 
+                                                    "Civil Engineering", 
+                                                    "Computer Engineering", "Computer Information Systems",
+                                                    "Computer Science","Earth Science", 
+                                                    "Electrical Engineering", "Electrical Technology",
+                                                    "Engineering","Environment", "Geography", "Geology",
+                                                    "MacRomolecular Science & Eng", "Materials Science",
+                                                    "Mathematics", "Mechanical Engineering",
+                                                    "Natural Sciences", "Physics", "Science", "Statistics"),
+                                     "Business" = c("Accounting", "Accounting & Finance", "Business",
+                                                    "Communication", "Finance", "Management",
+                                                    "Marketing"),
+                                   "Humanities" = c("African Studies", "Anthropology", "Art", "Art History",
+                                                    "Asian American Studies", "ASL & Deaf Studies" ,
+                                                    "Chicano Studies", "Classics", "Comparative Literature",
+                                                    "Culinary Arts", "Design", "Economics", "English", 
+                                                    "Ethnic Studies", "Film", "Fine Arts","German",
+                                                    "Graphic Arts", "Hispanic Studies", "History",
+                                                    "Humanities", "Interaction Design & Art", 
+                                                    "International Studies", "Italian", "Journalism", 
+                                                    "Languages", "Library Science","Linguistics",
+                                                    "Literature", "Music", "Philosophy", "Political Science",
+                                                    "Psychology", "Religion", "Religious Studies", "Russian",
+                                                    "Social Science", "Sociology", "Spanish", "Speech",
+                                                    "Theater", "Theology", "Visual Arts", "Women's Studies",
+                                                    "Writing"), 
+                                     "Other" = c("Anatomy", "Health Science", "Hospitality", 
+                                                    "Kinesiology", "Medicine", "Nursing", "Nutrition", 
+                                                    "Pharmacology", "Pharmacy", "Public Health", "Automotive Technology", 
+                                                    "Childrens Literature", "Criminal Justice", "Education", "Elementary Education",
+                                                    "Family & Child Studies", "Family & Consumer Science",
+                                                    "Honors", "Law", "Not Specified", "Physical Ed", 
+                                                    "Physical Education")))
+```
+### REGION/STATE
+```{r, warning=FALSE}
+rmp_clean$state_name[rmp_clean$state_name == " Pomona"] <- " CA"
+rmp_clean$state_name[rmp_clean$state_name == " Northridge"] <- " CA"
+rmp_clean$state_name[rmp_clean$state_name == " Baltimore"] <- " MD"
+rmp_clean$state_name[rmp_clean$state_name == " QC"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " BC"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " AB"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " SK"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " MB"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " ON"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " NB"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " NL"] <- " CANADA"
+rmp_clean$state_name[rmp_clean$state_name == " NS"] <- " CANADA"
+
+rmp_clean <- rmp_clean %>% 
+  mutate(state_name = str_remove(state_name," ")) %>% 
+  mutate(state_name = factor(state_name)) %>% 
+  mutate(us_region = fct_collapse(state_name,
+                                  "West" = c("CA","WA","OR","NV","UT","WY","MT",
+                                             "CO","AK","HI","AZ","NM","ID"),
+                                  "Midwest" = c("ND","SD","NE","KS","MN","IA","WI","MO","IL","MI","IN","OH"),
+                                  "South" = c("AR","LA","MS","KY","TN","AL","TX","OK",
+                                                  "GA","FL","WV","VA","NC","SC","DC"),
+                                  "North" = c("ME","NH","VT","NY","MA","CT","RI","PA","NJ","DE","MD"),
+                                  "Canada" = c("CANADA")))
+```
+### ATTENDANCE
+```{r}
+rmp_clean <- rmp_clean %>% 
+  mutate(attendance = factor(attence)) %>% 
+  mutate(attendance = fct_recode(attendance,
+                                 "Mandatory" = "Mandatory",
+                                 "Not Mandatory" = "Not Mandatory",
+                                 "NA" = ""))
+```
+### GRADES
+```{r}
+rmp_grades <- rmp_clean %>% 
+  mutate(grades = factor(grades)) %>%  
+  mutate(grades = fct_collapse(grades,
+                                  "A" = c("A","A+","A-"),
+                                  "B" = c("B","B+","B-"),
+                                  "C" = c("C","C+","C-"),
+                                  "D" = c("D","D+","D-"),
+                                  "F" = c("F", "INC"),
+                              "Other" = c("","Audit/No","Not","P","WD")))
+```
+### FOR CREDITS 
+```{r}
+rmp_clean <- rmp_clean %>% 
+  mutate(for_credits = factor(for_credits)) %>%  
+  mutate(for_credits = fct_recode(for_credits,
+                                 "Yes" = "Yes",
+                                 "No" = "No",
+                                 "NA" = ""))
+```
+### GENDER
+```{r}
+rmp_clean <- rmp_clean %>% 
+  mutate(gender = factor(gender)) %>% 
+  mutate(gender = fct_recode(gender,
+                                 "female" = "mostly_female",
+                                 "male" = "mostly_male",
+                                 "unknown" = "andy"))
+```
+
+## Quantitative Variables
+```{r}
+sumtable_to_df <- function(x, variable) {
+  summary <- data.frame(unclass(summary(x)), check.names = FALSE)
+  summary <- data.frame(t(summary))
+  rownames(summary)[1] <- variable
+  if (ncol(summary) == 7) {
+    colnames(summary) <- c("min", "q1", "median", "mean", "q3", "max", "missing")
+  } else if (ncol(summary) != 7) {
+     colnames(summary) <- c("min", "q1", "median", "mean", "q3", "max")
+     summary$missing = 0
+  }
+  return(summary)
+}
+
+year_since_first_review = sumtable_to_df(rmp_clean$year_since_first_review, "year_since_first_review")
+star_rating = sumtable_to_df(rmp_clean$star_rating, "star_rating")
+diff_index = sumtable_to_df(rmp_clean$diff_index, "diff_index")
+student_star = sumtable_to_df(rmp_clean$student_star, "student_star")
+student_diffcult = sumtable_to_df(rmp_clean$student_difficult, "student_diffcult")
+
+rmp_quant_sum  <- rbind(star_rating, diff_index, student_star, student_diffcult) %>% 
+  select(min, q1, median, mean, q3, max) 
+colnames(rmp_quant_sum) <- c("Min.", "Q1", "Median", "Mean", "Q3", "Max.")
+```
+### DATE
+```{r}
+rmp_clean <- rmp_clean %>% 
+  mutate(post_date=mdy(post_date))
+```
+
+```{r}
+ggplot(rmp_clean, ) +
+  geom_density(mapping = aes(x = star_rating, color = "Star Rating"), adjust = 1.5) +  # mean rating per professor
+  geom_density(mapping = aes(x = diff_index, color = "Difficulty Rating"), adjust = 1.5) +    # mean difficulty per professor
+  labs(
+    title = "Density of Average Star and Difficulty Ratings",
+    x = "Density",
+    y = "Rating") +
+  guides(color = guide_legend(title = "Color")) 
+```
+Box plot of Department/College against star rating
+```{r}
+ggplot(rmp_clean)+
+  geom_boxplot(aes(x=department_fewer, y=star_rating, 
+                   fill = department_fewer)) 
+```
+Box plot of Grades against star rating
+```{r}
+rmp_grades %>% 
+  filter(grades != "Other") %>% 
+ggplot()+
+  geom_boxplot(aes(x=grades, y=student_star, fill=grades)) +
+  labs(
+    title = "Grades vs. Quality Rating",
+    x = "Grades",
+    y = "Quality Rating") +
+  guides(fill = guide_legend(title = "Grades")) #change legend title
+```
+Comment Cleaning
+```{r}
+rmp_comments <- rmp_clean %>% 
+  unnest_tokens(output=word, input=comments) %>% 
+  select(star_rating, diff_index, state_name, department_name, department_fewer, word)
+rmp_comments_no_stop <- anti_join(x=rmp_comments, y=stop_words)
+```
+```{r}
+rmp_comments_no_common %>% 
+  count(word) %>% 
+  arrange(desc(n)) %>% 
+  slice_head(n=10) %>%
+  mutate(word = reorder(word, n)) %>%
+  ggplot(mapping=aes(x=word, y=n))+
+  geom_col(fill = "deepskyblue3")+
+  coord_flip() +
+  labs(x = "Word", y = "Count")
+
+rmp_comments_no_common %>% 
+  count(word) %>%
+  arrange(desc( n)) %>%
+  slice_head(n=75) %>% 
+  with(wordcloud(words =word, freq=n, random.order=FALSE, scale= c(7, 0.25), colors= brewer.pal(4, "Spectral")))
+```
+```{r}
+bing_lexicon<-get_sentiments(lexicon="bing") 
+rmp_comments_bing<- inner_join(x=rmp_comments, y=bing_lexicon)
+rmp_comments_positive_count <- rmp_comments_bing %>% 
+  filter(sentiment=="positive") %>%
+  count(word) %>%
+  arrange(desc( n)) %>%
+  slice_head(n=10)
+
+```
+
+Sentiment by Department
+```{r}
+rmp_dep_sentiment <- rmp_comments_bing%>%
+  group_by(department_name)%>%
+  count(sentiment) %>%
+  arrange(department_name, sentiment) %>% 
+  pivot_wider(names_from = sentiment, values_from = n) %>% 
+  mutate(net_sentiment=positive-negative)%>% #find net 
+  mutate(total = negative + positive) %>% 
+  slice_head(n = 10) %>% 
+  mutate(p_sentiment = positive/total) %>% 
+  arrange(desc(p_sentiment))
+```
+
+```{r}
+rmp_gender <- rmp_clean %>% 
+  filter(gender != "unknown") %>% 
+  group_by(gender,department_fewer) %>% 
+  summarise(AverageRating = mean(star_rating)) %>% 
+  ungroup() 
+
+ggplot(rmp_gender) +
+  geom_col(mapping = aes(x=department_fewer, y = AverageRating, fill=gender),
+           position="dodge") +
+  labs(title = "Average Rating by Department and Gender", x = "Department", y = "Average Rating")
+```
+
+```{r}
+rmp_mean <- rmp_clean %>% 
+  filter(us_region != "Canada") %>% 
+  group_by(state_name, us_region) %>% 
+  summarise(AverageRating = mean(star_rating)) %>% 
+  arrange(desc(AverageRating))                          # should facet by region and put points within each region too
+ggplot(rmp_mean) +
+  geom_point(mapping = aes(y=state_name, x = AverageRating, color = us_region))+
+  facet_wrap(~us_region, scales = "free") +
+  theme(legend.position="none") +
+  scale_color_brewer(palette = "Set1") +
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    strip.background = element_rect(fill= "deepskyblue3"), 
+    strip.text = element_text(color = "white", size = 10)) +
+    labs(title = "Quality Ratings Across US States by Region", y = "State Name", x = "Average Rating")
+
+```
+
+```{r}
+rmp_clean_profs <- rmp_clean %>% 
+  group_by(professor_name, department_fewer) %>% 
+  summarise(mean_quality = mean(star_rating), mean_difficulty = mean(diff_index), 
+            count = n(), earliest = min(post_date), latest = max(post_date), 
+            time = round(as.numeric(max(post_date) - min(post_date))/365)) %>% 
+  arrange(desc(count))
+
+
+```
+
+```{r}
+table <- rmp_clean_profs %>% 
+  group_by(department_fewer, time) %>% 
+  summarize(mean = mean(mean_quality))
+ggplot(table) +
+  geom_line(aes(x=time, y=mean, color = department_fewer)) +
+  labs(title = "Average Quality Rating Over Time Per Department",
+       x = "Time (in years)", y = "Rating") +
+  guides(color=guide_legend(title="Department"))
+```
+
+
+Finding Common Words in Comments
+```{r}
+rmp_comments_no_common <- rmp_comments_no_stop %>%  # filter out super common words with no particular sentiment
+  filter(word != "class" & word != "teacher" & word !=  "professor" & word !=  "don" 
+         & word !=  "students" & word !=  "teach" & word != "classes" & word != "prof" & word != "doesn" & word != "2"
+         & word != "didn", word != "=" & word != "ve" & word != "3")
+rmp_low_quality_words <- rmp_comments_no_common %>% 
+  filter(star_rating <= 2.4)
+rmp_avg_quality_words <- rmp_comments_no_common %>% 
+  filter(star_rating >= 2.5 & star_rating <= 3.4)
+rmp_high_quality_words <- rmp_comments_no_common %>% 
+  filter(star_rating >= 3.5)
+```
+
+Word Clouds
+```{r}
+rmp_high_quality_words %>% 
+  count(word) %>%
+  arrange(desc( n)) %>%
+  slice_head(n=75) %>% 
+  with(wordcloud(words =word, freq=n, random.order=FALSE, scale= c(5, 0.25), colors= brewer.pal(4, "Spectral")))
+```
+
+```{r}
+rmp_avg_quality_words %>% 
+  count(word) %>%
+  arrange(desc( n)) %>%
+  slice_head(n=75) %>% 
+  with(wordcloud(words =word, freq=n, random.order=FALSE, scale= c(5, 0.25), colors= brewer.pal(4, "Spectral")))
+```
+
+```{r}
+rmp_low_quality_words %>% 
+  count(word) %>%
+  arrange(desc( n)) %>%
+  slice_head(n=75) %>% 
+  with(wordcloud(words =word, freq=n, random.order=FALSE, scale= c(5, 0.25), colors= brewer.pal(4, "Spectral")))
+```
+
+Bar Plots With Common Words by Department
+```{r}
+high_common_words <- rmp_high_quality_words %>% 
+  group_by(department_fewer) %>% 
+  count(word) %>% 
+  arrange(desc(n)) %>% 
+  slice_head(n=10) %>%
+  mutate(word = reorder(word, n))
+ggplot(data = high_common_words)+
+  geom_col(aes(x=reorder(word, +n), y=n, fill = department_fewer)) +
+  coord_flip() +
+  facet_wrap(~department_fewer, scales = "free") +
+  theme(legend.position="none") +
+  scale_fill_viridis(discrete = TRUE) +
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    strip.background = element_rect(fill= "deepskyblue3"), 
+    strip.text = element_text(color = "white", size = 10)) +
+    labs(title = "Common Words Across Well Rated Comments (>3.4)", y = "Count", x = "Word")
+```
+
+```{r}
+low_common_words <- rmp_low_quality_words %>% 
+  group_by(department_fewer) %>% 
+  count(word) %>% 
+  arrange(desc(n)) %>% 
+  slice_head(n=10) %>%
+  mutate(word = reorder(word, n))
+ggplot(data = low_common_words)+
+  geom_col(aes(x=reorder(word, +n), y=n, fill = department_fewer)) +
+  coord_flip() +
+  facet_wrap(~department_fewer, scales = "free") +
+  theme(legend.position="none") +
+  scale_fill_viridis(discrete = TRUE) +
+  theme(
+    plot.title = element_text(hjust = 0.5), 
+    strip.background = element_rect(fill= "deepskyblue3"), 
+    strip.text = element_text(color = "white", size = 10)) +
+    labs(title = "Common Words Across Poor Rated Comments (<2.5)", y = "Count", x = "Word")
+
+```
+
+Attendance and For Credits Box Plots
+```{r}
+attendance <- rmp_clean %>% 
+  filter(attendance != "NA") %>% 
+ggplot() +
+  geom_boxplot(aes(x=attendance, y = star_rating, color = attendance),linewidth = 1) +
+  labs(
+    title = "Average Quality Rating vs. Attendance",
+    x = "Attendance",
+    y = "Rating") + theme(legend.position = "none")
+for_credits <- rmp_clean %>% 
+  filter(for_credits != "NA") %>% 
+ggplot() +
+  geom_boxplot(aes(x=for_credits, y = star_rating, color = for_credits), linewidth = 1) +
+  labs(
+    title = "Average Quality Rating vs. For Credit",
+    x = "For Credit",
+    y = "Rating") + theme(legend.position = "none")
+figure <- ggarrange(attendance, for_credits,
+                    ncol = 2, nrow = 1)
+figure
+```
+
+
+
+
